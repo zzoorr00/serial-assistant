@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 import json
 import re
+from ui_text import english_text
 
 IDENTITY_QUERY = b"\x1d"
 IDENTITY_PREFIX = b"\x1eFBCI1 "
@@ -23,16 +24,16 @@ class DeviceIdentity:
     def display_name(self):
         if self.role == "ble_receiver":
             if self.receiver_target == "UNIVERSAL":
-                return "FreeBCI 蓝牙接收板（通用）"
+                return "FreeBCI BLE Receiver (Universal)"
             family = self.receiver_target or self.chip
-            return f"FreeBCI 蓝牙接收板（{family}-{self.address.replace(':', '')[-4:]}）"
-        return f"FreeBCI {self.chip} 采集板（{'/'.join(map(str, self.supported_channels))} 通道）"
+            return f"FreeBCI BLE Receiver ({family}-{self.address.replace(':', '')[-4:]})"
+        return f"FreeBCI {self.chip} Acquisition ({'/'.join(map(str, self.supported_channels))} channels)"
 
     @property
     def details(self):
-        return (f"{self.display_name}\n设备 ID：{self.uid}\n硬件：ESP32-{self.chip}\n"
-                f"BLE 地址：{self.address or '未提供'}\n当前通道：{self.active_channels}\n"
-                f"固件：{self.firmware}\n接口：{self.transport}")
+        return (f"{self.display_name}\nDevice ID: {self.uid}\nHardware: ESP32-{self.chip}\n"
+                f"BLE address: {self.address or 'not provided'}\nActive channels: {self.active_channels}\n"
+                f"Firmware: {english_text(self.firmware)}\nInterface: {english_text(self.transport)}")
 
 
 def parse_identity(data):

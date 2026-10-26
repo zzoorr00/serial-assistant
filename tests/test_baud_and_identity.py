@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from auto_baud import BaudTrial, StreamEvidence, parse_rates, validate_baud
+from serial_core import validate_baud
 from device_identity import IDENTITY_PREFIX, IDENTITY_QUERY, parse_identity
 from device_scan import ScanResult, probe_identity, scan_ports
 from serial_core import SerialSession
@@ -31,48 +31,6 @@ def response(**updates):
     return IDENTITY_PREFIX + json.dumps(value).encode("ascii") + b"\n"
 
 
-class BaudEvidenceTests(unittest.TestCase):
-    def test_rate_input_bounds_duplicates_and_delimiters(self):
-        self.assertEqual(parse_rates("115200，921600 115200;2000000"), (115200, 921600, 2000000))
-        for value in ("", "abc", "0", "12000001", "115200.0", ",".join(map(str, range(1, 10)))):
-            with self.subTest(value=value), self.assertRaises(ValueError): parse_rates(value)
-        self.assertEqual(validate_baud("921600"), 921600)
-
-    def test_text_evidence_fragmentation_and_old_data_not_reused(self):
-        evidence = StreamEvidence()
-        self.assertFalse(evidence.feed(b"wai"))
-        self.assertTrue(evidence.feed(b"ting...\r\n"))
-        self.assertFalse(evidence.feed(b"\xff\x00"))
-        self.assertTrue(evidence.feed(b"\nFirmware: test\r\n"))
-        self.assertFalse(StreamEvidence().feed(b"just printable unrelated data\n"))
-
-    def test_binary_requires_three_valid_sequential_frames(self):
-        for length in (33, 57):
-            frames = b"".join(bytes([0xA0, seq]) + b"\x00" * (length - 3) + b"\xc0" for seq in (254, 255, 0))
-            evidence = StreamEvidence()
-            self.assertFalse(evidence.feed(frames[:length * 2]))
-            self.assertTrue(evidence.feed(frames[length * 2:]))
-            self.assertFalse(evidence.feed(b"garbage"))
-            bad = bytearray(frames)
-            bad[length + 1] = 12
-            self.assertFalse(StreamEvidence().feed(bytes(bad)))
-
-    def test_lock_idle_retrial_and_window_reset(self):
-        trial = BaudTrial(115200, (921600, 2000000), 0, dwell=1, idle=3)
-        self.assertTrue(trial.observe(b"waiting...\r\n", 0.1))
-        self.assertIsNone(trial.tick(2))
-        self.assertIsNone(trial.tick(3.2))
-        self.assertIsNone(trial.tick(10.2))
-        trial.observe(b"invalid payload data", 10.3)
-        self.assertEqual(trial.tick(10.4), ("search", 115200))
-        self.assertFalse(trial.locked)
-        self.assertEqual(trial.tick(11.5), ("rate", 921600))
-        self.assertFalse(trial.observe(b"...\n", 11.6))
-        quiet = BaudTrial(115200, (921600,), 0)
-        quiet.observe(b"waiting...\r\n", 0.1)
-        self.assertEqual(quiet.tick(15.2), ("search", 115200))
-
-
 class LiveBaudTests(unittest.TestCase):
     def session(self, **options):
         session = SerialSession(**options)
@@ -83,6 +41,33 @@ class LiveBaudTests(unittest.TestCase):
             until(lambda: not session.busy())
         self.addCleanup(stop)
         return session
+
+    def test_incoming_rate_announcements_never_change_host_baud(self):
+        reads = []
+        rate_changes = []
+        class Port:
+            in_waiting = 80
+            _baud = 115200
+            @property
+            def baudrate(self): return self._baud
+            @baudrate.setter
+            def baudrate(self, rate):
+                rate_changes.append(rate)
+                self._baud = rate
+            def open(self): pass
+            def read(self, n):
+                time.sleep(0.01)
+                reads.append(True)
+                return b"UART baud switched to 2000000\r\n\xff\x80"
+            def close(self): pass
+        session = self.session(factory=lambda *a, **k: Port())
+        session.open(dict(port="COM_TEST", baudrate=115200))
+        until(lambda: len(reads) >= 160)
+        self.assertEqual(session.current_baud, 115200)
+        self.assertEqual(rate_changes, [])
+        session.set_baudrate(921600)
+        until(lambda: session.current_baud == 921600)
+        self.assertEqual(rate_changes, [921600])
 
     def test_manual_changes_same_handle_and_reconnect_remembers_rate(self):
         opened = []
@@ -144,72 +129,12 @@ class LiveBaudTests(unittest.TestCase):
         self.assertTrue(session.connected_event.is_set())
         self.assertFalse(port.closed)
 
-    def test_passive_auto_follows_two_changes_and_logs_trials(self):
-        temp = self.enterContext(tempfile.TemporaryDirectory())
-        target = [115200]
-        writes = []
-        opened = []
-        class Port:
-            in_waiting = 12
-            def open(self): opened.append(self)
-            def read(self, n):
-                time.sleep(0.003)
-                return b"waiting...\r\n" if self.baudrate == target[0] else b"\xff\x00\x80bad\n"
-            def write(self, data): writes.append(data); return len(data)
-            def close(self): pass
-        port = Port()
-        def factory(*args, **config):
-            port.baudrate = config["baudrate"]
-            return port
-        session = self.session(factory=factory, auto_dwell=0.02, auto_idle=0.04)
-        session.configure_auto(True)
-        writer = session.start_recording(Path(temp) / "auto")
-        until(writer.ready.is_set)
-        session.open(dict(port="COM_TEST", baudrate=115200))
-        until(lambda: session.connected_event.is_set() and not session.scanning_event.is_set())
-        for rate in (921600, 2000000):
-            target[0] = rate
-            until(lambda: session.current_baud == rate and not session.scanning_event.is_set())
-        self.assertEqual(len(opened), 1)
-        self.assertEqual(writes, [])
-        session.close()
-        until(lambda: not session.is_alive())
-        session.stop_recording()
-        until(writer.finished.is_set)
-        self.assertFalse(writer.failure)
-        text = (writer.directory / "session.log").read_text(encoding="utf-8")
-        self.assertIn("AUTO MATCH 921600", text)
-        self.assertIn("AUTO MATCH 2000000", text)
-        self.assertEqual((writer.directory / "tx.bin").read_bytes(), b"")
-
-    def test_disable_restores_confirmed_and_manual_overrides_search(self):
-        class Port:
-            in_waiting = 0
-            baudrate = 115200
-            def open(self): pass
-            def read(self, n): time.sleep(0.003); return b"\xff"
-            def close(self): pass
-        port = Port()
-        session = self.session(factory=lambda *a, **k: port, auto_dwell=0.015)
-        session.configure_auto(True)
-        session.open(dict(port="COM_TEST", baudrate=115200))
-        until(lambda: session.current_baud == 921600)
-        with self.assertRaises(RuntimeError): session.send(b"do not send")
-        session.configure_auto(False)
-        until(lambda: not session.scanning_event.is_set())
-        self.assertEqual(session.current_baud, 115200)
-        session.configure_auto(True)
-        until(lambda: session.current_baud == 921600)
-        session.set_baudrate(2000000)
-        until(lambda: session.current_baud == 2000000 and not session.scanning_event.is_set())
-        time.sleep(0.05)
-        self.assertEqual(session.current_baud, 2000000)
 
 
 class IdentityTests(unittest.TestCase):
     def test_protocol_and_role_names(self):
         identity = parse_identity(b"boot\r\n" + response())
-        self.assertIn("采集板", identity.display_name)
+        self.assertIn("Acquisition", identity.display_name)
         self.assertEqual(identity.uid, "AABBCCDDEEFF")
         receiver = parse_identity(response(role="ble_receiver", supported_channels=[], active_channels=0,
                                           address="AA:BB:CC:DD:12:34", receiver_target="S3"))

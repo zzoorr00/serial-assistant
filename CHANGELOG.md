@@ -1,5 +1,12 @@
 # 版本记录
 
+## 1.6 debug — 2026-10-26
+
+- I removed passive automatic baud detection and switching while keeping live manual Apply and explicit FreeBCI identity scanning.
+- I translated the application controls, tooltips, status, identity names, errors and file dialogs into English, while preserving serial payloads.
+- I retained aligned HEX data with separate RX/TX headers, configurable 20–90 byte rows, recording, reconnect and independent windows.
+- I passed 35 unit/stream tests and Windows Qt simulations, including an exact 8 MiB raw recording comparison. Hardware acceptance remains pending; see docs/TESTING.md.
+
 ## 1.5 debug — 2026-10-26
 
 - 我增加了在线应用波特率、驱动拒绝时回退和断线重连保留新速率。

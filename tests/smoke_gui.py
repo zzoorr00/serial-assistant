@@ -158,13 +158,13 @@ restart.session.reconnect_interval = 5
 wait_for(lambda: not restart.port_scan)
 restart.port.setCurrentIndex(restart.port.findData("loop://"))
 QTest.mouseClick(restart.open_button, Qt.LeftButton)
-wait_for(lambda: restart.connecting and "自动重连" in restart.status.text())
-assert restart.open_button.text() == "关闭串口"
+wait_for(lambda: restart.connecting and "reconnect" in restart.status.text())
+assert restart.open_button.text() == "Close port"
 assert not restart.send_button.isEnabled()
 assert not restart.port.isEnabled()
 QTest.mouseClick(restart.open_button, Qt.LeftButton)
 wait_for(lambda: not restart.session.is_alive() and not restart.connecting)
-assert restart.open_button.text() == "打开串口"
+assert restart.open_button.text() == "Open port"
 assert restart.port.isEnabled()
 close_window(restart)
 results["gui_reconnect_wait_and_manual_cancel"] = True

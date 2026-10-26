@@ -1,4 +1,4 @@
-"""GUI integration of online baud changes, passive matching and identity scanning."""
+"""GUI integration of online baud changes, English UI and identity scanning."""
 import faulthandler
 import json
 import os
@@ -14,10 +14,12 @@ faulthandler.dump_traceback_later(25, repeat=True)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PyQt5.QtCore import Qt
 from PyQt5.QtTest import QTest
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QCheckBox, QComboBox, QPlainTextEdit, QFileDialog
 from main import MonitorWindow
 from device_identity import IDENTITY_PREFIX, parse_identity
 from device_scan import ScanResult
+from ui_text import english_text
+import re
 
 app = QApplication([])
 app.setQuitOnLastWindowClosed(False)
@@ -52,9 +54,9 @@ def scanner(notify, cancelled, identify=False, excluded=()):
         scan_started.set()
         while hold_scan[0] and not cancelled(): time.sleep(0.003)
         if cancelled(): return
-        notify("identity", ScanResult("COM51", occupied=True, message="当前窗口已连接") if "COM51" in excluded
+        notify("identity", ScanResult("COM51", occupied=True, message="Connected in this window") if "COM51" in excluded
                else ScanResult("COM51", identity, False, 115200))
-        notify("identity", ScanResult("COM52", occupied=True, message="端口已占用"))
+        notify("identity", ScanResult("COM52", occupied=True, message="Port busy"))
 
 
 target = [115200]
@@ -80,13 +82,13 @@ with patch("main.scan_ports", scanner), tempfile.TemporaryDirectory() as temp:
     assert window.selected_port() == "COM51"
     assert "C5" in window.port.currentText()
     assert "AABBCCDDEEFF" in window.identity_label.text()
-    assert "占用" in window.port.itemText(window.port.findData("COM52"))
+    assert "Busy" in window.port.itemText(window.port.findData("COM52"))
     results["identity_rows_keep_com_and_show_name_id_occupied"] = True
 
     window.session.factory = lambda *a, **k: Port(k["baudrate"])
-    window.session.auto_dwell = 0.1
-    window.session.auto_idle = 0.07
-    window.start_recording_at(Path(temp))
+    with patch.object(QFileDialog, "getExistingDirectory", return_value=temp) as folder_dialog:
+        window.toggle_recording()
+        assert folder_dialog.call_args.kwargs["options"] & QFileDialog.DontUseNativeDialog
     wait_for(lambda: window.recording)
     writer = window.session.writers[-1]
     QTest.mouseClick(window.open_button, Qt.LeftButton)
@@ -101,34 +103,47 @@ with patch("main.scan_ports", scanner), tempfile.TemporaryDirectory() as temp:
     assert "921600 baud" in window.status.text()
     results["manual_baud_applies_without_reopening_handle"] = True
 
-    window.auto_baud.setChecked(True)
-    wait_for(lambda: "已匹配 921600" in window.auto_label.text())
+    # Incoming rate announcements never change the host baud automatically.
     target[0] = 2000000
-    wait_for(lambda: window.session.scanning_event.is_set())
-    wait_for(lambda: not window.send_button.isEnabled())
-    wait_for(lambda: "已匹配 2000000" in window.auto_label.text())
-    wait_for(lambda: window.send_button.isEnabled())
-    assert writes == [], writes
-    assert len(opened) == 1
+    QTest.qWait(120)
+    assert window.session.current_baud == 921600
+    assert len(opened) == 1 and writes == []
+    target[0] = 921600
     window.clear_history()
     window.hex_view.setChecked(True)
     window.hex_columns.setValue(20)
     wait_for(lambda: bool(window.receive.toPlainText()))
-    window.log_label.setText("记录中：模拟会话（示例数据）")
+    window.log_label.setText("Recording: simulated session (sample data)")
+    def assert_english_ui():
+        cjk = re.compile(r"[\u3400-\u9fff]")
+        strings = [window.windowTitle()]
+        for widget_type in (QLabel, QPushButton, QCheckBox):
+            for widget in window.findChildren(widget_type):
+                strings.extend([widget.text(), widget.toolTip()])
+        for widget in window.findChildren(QComboBox):
+            strings.extend(widget.itemText(i) for i in range(widget.count()))
+            strings.append(widget.toolTip())
+        for widget in window.findChildren(QPlainTextEdit):
+            strings.append(widget.placeholderText())
+        assert not any(cjk.search(text) for text in strings), [text for text in strings if cjk.search(text)]
+    assert_english_ui()
+    window.show_error("设备无法访问")
+    assert_english_ui()
+    window.connected_status()
+    results["english_labels_tooltips_descriptions_and_error_fallback"] = True
     window.grab().save(str(output / "gui_features.png"))
-    results["passive_auto_follows_change_and_gates_send"] = True
+    results["no_automatic_baud_changes"] = True
 
     window.send_edit.setPlainText("v")
     QTest.mouseClick(window.send_button, Qt.LeftButton)
     wait_for(lambda: bool(writes))
-    assert writes == [(2000000, b"v")]
+    assert writes == [(921600, b"v")]
     target[0] = 115200
     window.baud.setCurrentText("115200")
     QTest.mouseClick(window.apply_baud, Qt.LeftButton)
     wait_for(lambda: window.session.current_baud == 115200 and not window.baud_pending)
-    assert not window.auto_baud.isChecked()
     assert len(opened) == 1
-    results["manual_apply_overrides_auto"] = True
+    results["repeated_manual_apply_uses_same_handle"] = True
 
     window.baud.setCurrentText("bad")
     QTest.mouseClick(window.apply_baud, Qt.LeftButton)
@@ -149,7 +164,7 @@ with patch("main.scan_ports", scanner), tempfile.TemporaryDirectory() as temp:
 
     child = MonitorWindow()
     wait_for(lambda: not child.port_scan)
-    assert not child.auto_baud.isChecked() and child.baud.currentText() == "115200"
+    assert child.baud.currentText() == "115200"
     child.close()
     wait_for(lambda: child not in MonitorWindow.windows)
     results["new_window_settings_independent"] = True
@@ -162,7 +177,7 @@ with patch("main.scan_ports", scanner), tempfile.TemporaryDirectory() as temp:
     wait_for(lambda: window not in MonitorWindow.windows)
     assert writer.finished.is_set() and not writer.failure
     log = (writer.directory / "session.log").read_text(encoding="utf-8")
-    assert "AUTO MATCH 2000000" in log and "BAUD" in log
+    assert "BAUD" in log and "AUTO" not in log
     assert (writer.directory / "tx.bin").read_bytes() == b"v"
     results["close_cancels_scan_and_finishes_recording"] = True
 

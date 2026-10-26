@@ -1,30 +1,47 @@
-# 测试说明
+# Testing scope
 
-当前版本为 **1.5 debug**，主要面向 Windows x64，使用 Python 3.12.4 完成软件自测。
+Version **1.6 debug**, tested with Python 3.12.4 on Windows 10 x64.
 
-## 自动测试
-
-安装 `requirements.txt` 后运行：
+## Unit and stream checks
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-1.5 版本共有 37 项底层/格式化测试，覆盖文本编码、HEX 输入校验、回环二进制收发、后台记录与导出、重连与取消、旧命令不重发、超时、队列上限、真实换行、拆分 UTF-8、方向切换、HEX 独立方向标题与数据列，以及 20–90 的全部 HEX 行宽。新增检查覆盖在线速率切换不重开句柄、驱动拒绝后的回退、重连保留新速率、FreeBCI 文本/连续帧识别、两次外部速率改变后的被动匹配、关闭试探与手动覆盖、身份协议及扫描跳过规则。
+35 tests cover encoding, HEX validation, binary loopback, recording/export, reconnect and
+cancellation, no replay of stale commands, timeouts and bounded queues; stream formatting,
+split UTF-8, CR/LF/CRLF, direction headers and all 71 HEX widths from 20 to 90; live baud changes
+on the same handle, driver rejection rollback and reconnect at the last applied rate; identity
+protocol validation, read-only probing and scan exclusions; English runtime messages, localized
+OS-error fallback and baud validation. A fake serial stream repeatedly announces another baud
+and sends invalid bytes; the host rate stays fixed until explicitly changed.
 
-## Windows 界面测试
+## Windows GUI simulations
 
 ```powershell
 .\.venv\Scripts\python.exe tests\smoke_gui.py
 .\.venv\Scripts\python.exe tests\smoke_features.py
 ```
 
-测试会打开临时窗口，使用 `loop://` 和模拟数据，不打开真实设备端口。检查文本/HEX 切换、行宽重排、行首时间戳、收发方向、暂停/清空、缓存导出、记录、多窗口、重连等待与手动取消，以及关闭时末尾数据保存。HEX 对齐检查还核对了 RX/TX 标题独占一行、等宽字形宽度和多行首个数据字节的像素位置。
+The tests temporarily open windows and use loopback or simulated ports, never real device ports.
+They check text/HEX rendering, row-width rerendering, actual monospace glyph widths and first-byte
+pixel alignment; timestamps, pause/clear, exports, recording, independent windows, reconnect and
+cancel, and the final in-flight read during close. An 8 MiB simulated stream is compared byte for
+byte with its raw recording, while checking display/cache bounds and GUI heartbeat gaps.
 
-`smoke_features.py` 使用模拟串口和模拟扫描器，检查名称/ID/占用标记、连接中应用波特率、自动试探与发送互斥、手动优先、扫描排除当前连接、取消扫描、多窗口设置独立，以及关闭时完成记录。它不代表已在真实板子上识别身份或测得实际波特率。
+Feature simulations check identity names/IDs/busy markers, live Apply without reopening, no
+automatic rate changes, manual sends, English labels/tooltips/device descriptions/error fallbacks,
+non-native English recording dialogs, connected-port scan exclusion, scan cancellation and orderly
+shutdown. Demo COM names and IDs are synthetic. Results and screenshots are in `test-output/`.
 
-模拟压力检查输入 8 MiB 数据并逐字节核对原始文件，同时验证显示缓存与文档上限。测试中的设备地址均为示例数据。生成的截图和结果位于 `test-output/`，该目录不纳入版本管理。
+## Remaining hardware checks
 
-## 实机验证范围
+Connect a real device, verify COM/settings and text/HEX send/receive. Change the board baud
+externally and manually Apply the same rate here; verify traffic resumes without closing the port.
+Scan compatible idle acquisition boards and receivers and check their identity. Record for 10–30
+minutes, toggle views and pause/resume, restart the board and reconnect USB at the same COM number.
+Confirm recording continues, Close stops reconnect attempts, and raw files match expected traffic.
 
-软件回环和模拟输入不等于硬件兼容性验收。真实设备收发、板子重启、USB 驱动恢复、长时间连续输入和其他电脑环境仍需实际验证。当前版本尚未完成这些项目的完整验收。
+Software simulations do not establish actual driver compatibility or device-side data integrity.
+Real USB rate changes, identity responses, power cycles, sustained traffic and another PC are
+pending hardware validation. This debug build has not been synced to stable.

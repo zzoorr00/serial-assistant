@@ -6,7 +6,9 @@ import time
 import serial
 from serial.tools import list_ports
 from device_identity import IDENTITY_QUERY, parse_identity
-from auto_baud import DEFAULT_RATES
+from ui_text import error_text
+
+IDENTITY_BAUD_RATES = (115200, 921600, 2000000)
 
 IDENTITY_INTERFACES = {(0x303A, 0x1001), (0x1A86, 0x55D3)}
 
@@ -36,14 +38,14 @@ def port_occupied(device):
     return False
 
 
-def probe_identity(device, cancelled, factory=None, dwell=1.2, rates=DEFAULT_RATES):
+def probe_identity(device, cancelled, factory=None, dwell=1.2, rates=IDENTITY_BAUD_RATES):
     port = (factory or serial.Serial)(port=None, baudrate=rates[0], timeout=0.04, write_timeout=0.15)
     try:
         port.dtr = False
         port.rts = False
         port.port = device
         if cancelled():
-            return ScanResult(device, message="已取消")
+            return ScanResult(device, message="Canceled")
         port.open()
         for rate in rates:
             if cancelled():
@@ -58,7 +60,7 @@ def probe_identity(device, cancelled, factory=None, dwell=1.2, rates=DEFAULT_RAT
             while not cancelled() and time.monotonic() < deadline:
                 chunk = port.read(min(max(port.in_waiting, 1), 1024))
                 if b"\xa0" in chunk:
-                    return ScanResult(device, message="正在输出二进制数据，未继续查询")
+                    return ScanResult(device, message="Binary data is streaming; identity query stopped")
                 received = (received + chunk)[-4096:]
                 identity = parse_identity(received)
                 if identity:
@@ -66,9 +68,9 @@ def probe_identity(device, cancelled, factory=None, dwell=1.2, rates=DEFAULT_RAT
                 if time.monotonic() >= query_at and not cancelled():
                     port.write(IDENTITY_QUERY)
                     query_at = time.monotonic() + 0.8
-        return ScanResult(device, message="已取消" if cancelled() else "未识别身份，仍可手动连接")
+        return ScanResult(device, message="Canceled" if cancelled() else "Identity unavailable; manual connection is still supported")
     except (ValueError, OSError, serial.SerialException) as exc:
-        return ScanResult(device, message=f"无法查询：{exc}")
+        return ScanResult(device, message=f"Identity query failed: {error_text(exc)}")
     finally:
         port.close()
 
@@ -82,14 +84,14 @@ def scan_ports(notify, cancelled, identify=False, excluded=(), port_lister=None,
         if cancelled():
             break
         if info.device in excluded:
-            result = ScanResult(info.device, occupied=True, message="当前窗口已连接，跳过查询")
+            result = ScanResult(info.device, occupied=True, message="Connected in this window; query skipped")
         else:
             busy = (occupied_check or port_occupied)(info.device)
             interface = (getattr(info, "vid", None), getattr(info, "pid", None))
             if busy:
-                result = ScanResult(info.device, occupied=True, message="端口已占用或不可访问，跳过查询")
+                result = ScanResult(info.device, occupied=True, message="Port busy or inaccessible; query skipped")
             elif interface not in IDENTITY_INTERFACES:
-                result = ScanResult(info.device, occupied=busy, message="未知 USB 接口，仅枚举，不发送查询")
+                result = ScanResult(info.device, occupied=busy, message="Unknown USB interface; listed without querying")
             else:
                 result = (probe or probe_identity)(info.device, cancelled)
                 if result.identity:

@@ -6,7 +6,7 @@ from datetime import datetime
 class StreamFormatter:
     def __init__(self, encoding="UTF-8", timestamps=True, hex_mode=False, max_line_chars=4096, hex_bytes_per_line=32):
         if type(hex_bytes_per_line) is not int or not 20 <= hex_bytes_per_line <= 90:
-            raise ValueError("HEX 每行字节数必须为 20–90 的整数")
+            raise ValueError("HEX row width must be an integer from 20 to 90")
         self.timestamps = timestamps
         self.hex_mode = hex_mode
         self.hex_bytes_per_line = hex_bytes_per_line
