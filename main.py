@@ -1,4 +1,4 @@
-"""SerialMonitor 1.4 debug: GUI work is bounded; serial and disk IO stay off GUI."""
+"""SerialMonitor 1.5 debug: GUI work is bounded; serial and disk IO stay off GUI."""
 from __future__ import annotations
 
 from collections import deque
@@ -14,15 +14,17 @@ from PyQt5.QtCore import QCoreApplication, Qt, QTimer
 from PyQt5.QtGui import QColor, QFont, QTextCharFormat, QTextCursor
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout,
-    QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
+    QHBoxLayout, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QPushButton,
     QSpinBox, QSplitter, QVBoxLayout, QWidget,
 )
 
-from serial_core import DisplayBuffer, SerialSession, discover_ports, encode_send, export_records
+from serial_core import DisplayBuffer, SerialSession, encode_send, export_records
 from display_format import StreamFormatter
+from auto_baud import parse_rates, validate_baud
+from device_scan import scan_ports
 
 
-VERSION = "1.4 debug"
+VERSION = "1.5 debug"
 HISTORY_BYTES = 1024 * 1024
 
 # Qt 5's wheel can encode its built-in plugin path incorrectly in Chinese
@@ -58,6 +60,11 @@ class MonitorWindow(QMainWindow):
         self.connecting = False
         self.closing = False
         self.port_scan = False
+        self.scan_identify = False
+        self.scan_stop = threading.Event()
+        self.identities = {}
+        self.active_port = ""
+        self.baud_pending = False
         self.exporting = False
         self.recording = False
         self.log_pending = False
@@ -67,12 +74,12 @@ class MonitorWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
         self.timer.start(40)
-        self.refresh_ports()
+        self.refresh_ports(identify=False)
 
     def _build_ui(self):
         self.setWindowTitle(f"串口助手 · SerialMonitor {VERSION}")
-        self.resize(1080, 740)
-        self.setMinimumSize(850, 610)
+        self.resize(1180, 840)
+        self.setMinimumSize(1000, 700)
         root = QWidget()
         self.setCentralWidget(root)
         layout = QVBoxLayout(root)
@@ -82,7 +89,7 @@ class MonitorWindow(QMainWindow):
         title = QLabel("串口助手")
         title.setObjectName("title")
         heading.addWidget(title)
-        subtitle = QLabel("SERIAL MONITOR  /  1.4 DEBUG")
+        subtitle = QLabel("SERIAL MONITOR  /  1.5 DEBUG")
         subtitle.setObjectName("muted")
         heading.addWidget(subtitle)
         heading.addStretch()
@@ -98,10 +105,20 @@ class MonitorWindow(QMainWindow):
         self.port = combo([], editable=True)
         self.port.setMinimumWidth(225)
         self.port.setToolTip("选择或手输 COM 端口；loop:// 是不连接设备的模拟回环")
-        self.refresh = QPushButton("刷新")
-        self.refresh.clicked.connect(self.refresh_ports)
+        self.refresh = QPushButton("扫描识别")
+        self.refresh.setToolTip("点击查询已知 FreeBCI USB 接口的身份；占用端口和未知接口不会收到查询。再次点击停止扫描。")
+        self.refresh.clicked.connect(lambda: self.refresh_ports(identify=True))
         self.baud = combo(["1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600", "1000000", "2000000"], "115200", True)
-        self.baud.setToolTip("支持手输波特率。更改参数前请关闭串口，再重新打开。")
+        self.baud.setToolTip("连接中也可改波特率，然后点「应用」。只修改电脑端串口，不发送指令改变板子。")
+        self.apply_baud = QPushButton("应用")
+        self.apply_baud.setEnabled(False)
+        self.apply_baud.clicked.connect(self.apply_baudrate)
+        baud_panel = QWidget()
+        baud_layout = QHBoxLayout(baud_panel)
+        baud_layout.setContentsMargins(0, 0, 0, 0)
+        baud_layout.setSpacing(5)
+        baud_layout.addWidget(self.baud, 1)
+        baud_layout.addWidget(self.apply_baud)
         self.bits = combo(["5", "6", "7", "8"], "8")
         self.parity = combo(["N 无", "E 偶", "O 奇", "M 标记", "S 空格"])
         self.stopbits = combo(["1", "1.5", "2"])
@@ -110,14 +127,42 @@ class MonitorWindow(QMainWindow):
         self.open_button.setMinimumWidth(115)
         self.open_button.clicked.connect(self.toggle_port)
         labels = ["串口 / 设备", "", "波特率", "数据位", "校验位", "停止位", ""]
-        controls = [self.port, self.refresh, self.baud, self.bits, self.parity, self.stopbits, self.open_button]
+        controls = [self.port, self.refresh, baud_panel, self.bits, self.parity, self.stopbits, self.open_button]
         for col, (label, control) in enumerate(zip(labels, controls)):
             grid.addWidget(QLabel(label), 0, col)
             grid.addWidget(control, 1, col)
         grid.setColumnStretch(0, 3)
         grid.setColumnStretch(2, 1)
         layout.addWidget(config_frame)
-        self.config_controls = [self.port, self.refresh, self.baud, self.bits, self.parity, self.stopbits]
+        self.config_controls = [self.port, self.bits, self.parity, self.stopbits]
+
+        self.identity_label = QLabel("设备身份：点击「扫描识别」查询；启动时仅列出端口")
+        self.identity_label.setTextFormat(Qt.PlainText)
+        self.identity_label.setWordWrap(True)
+        self.identity_label.setObjectName("muted")
+        layout.addWidget(self.identity_label)
+        self.port.currentTextChanged.connect(self.update_identity_label)
+
+        auto_bar = QHBoxLayout()
+        self.auto_baud = QCheckBox("自动波特率（FreeBCI 试探）")
+        self.auto_baud.setToolTip("默认关闭。仅监听 FreeBCI 日志或连续有效帧；试探时暂停发送，可能漏收/误收。约 3 秒无有效特征且有未验证输入，或静默约 15 秒后重新试探。")
+        self.auto_rates = QLineEdit("115200,921600,2000000")
+        self.auto_rates.setMinimumWidth(225)
+        self.auto_rates.setMaximumWidth(280)
+        self.auto_rates.setCursorPosition(0)
+        self.auto_rates.setToolTip("1–8 个候选波特率，逗号分隔；当前速率也会参与。")
+        self.auto_restart = QPushButton("重新探测")
+        self.auto_restart.setEnabled(False)
+        self.auto_restart.clicked.connect(self.restart_auto)
+        self.auto_label = QLabel("自动：关闭")
+        self.auto_label.setTextFormat(Qt.PlainText)
+        self.auto_label.setWordWrap(True)
+        self.auto_label.setObjectName("muted")
+        for widget in [self.auto_baud, QLabel("候选"), self.auto_rates, self.auto_restart]:
+            auto_bar.addWidget(widget)
+        auto_bar.addWidget(self.auto_label, 1)
+        self.auto_baud.toggled.connect(self.configure_auto)
+        layout.addLayout(auto_bar)
 
         display_bar = QHBoxLayout()
         self.hex_view = QCheckBox("HEX 显示")
@@ -226,7 +271,7 @@ class MonitorWindow(QMainWindow):
             QPushButton#primary { background: #2463d4; color: white; border-color: #2463d4; }
             QPushButton#primary:hover { background: #1b50b0; }
             QPushButton:disabled { background: #edf0f4; color: #95a1b1; border-color: #dce3ed; }
-            QComboBox, QSpinBox { background: white; border: 1px solid #ced8e5; border-radius: 4px; padding: 5px; min-height: 22px; }
+            QComboBox, QSpinBox, QLineEdit { background: white; border: 1px solid #ced8e5; border-radius: 4px; padding: 5px; min-height: 22px; }
             QComboBox:disabled, QSpinBox:disabled { background: #edf0f4; color: #7c8a9b; }
             QPlainTextEdit { background: white; border: 1px solid #ced8e5; border-radius: 6px; padding: 7px; selection-background-color: #c6dbff; font-family: 'Consolas'; font-size: 13px; }
             QCheckBox { spacing: 5px; }
@@ -237,18 +282,80 @@ class MonitorWindow(QMainWindow):
         child = MonitorWindow()
         child.show()
 
-    def refresh_ports(self):
+    def refresh_ports(self, identify=True):
         if self.port_scan:
+            self.scan_stop.set()
+            self.refresh.setText("正在停止…")
             return
         self.port_scan = True
-        self.refresh.setEnabled(False)
+        self.scan_identify = identify
+        self.scan_stop.clear()
+        self.refresh.setText("停止扫描")
+        excluded = {w.active_port for w in self.windows if w.session.is_alive()}
 
         def scan():
             try:
-                self.ui_events.put(("ports", discover_ports()))
+                scan_ports(lambda kind, value: self.ui_events.put((kind, value)), self.scan_stop.is_set,
+                           identify=identify, excluded=excluded)
             except Exception as exc:
                 self.ui_events.put(("scan_error", str(exc)))
+            finally:
+                self.ui_events.put(("scan_done", ""))
         threading.Thread(target=scan, name="port-scan", daemon=True).start()
+
+    def update_identity_label(self, *_):
+        result = self.identities.get(self.selected_port())
+        if result and result.identity:
+            identity = result.identity
+            self.identity_label.setText(f"设备：{identity.display_name}  ·  ID {identity.uid}  ·  查询速率 {result.baudrate}")
+            self.identity_label.setToolTip(identity.details)
+        elif result:
+            self.identity_label.setText("设备身份：" + result.message)
+            self.identity_label.setToolTip(result.message)
+        else:
+            self.identity_label.setText("设备身份：未查询；点击「扫描识别」")
+
+    def apply_baudrate(self):
+        try:
+            rate = validate_baud(self.baud.currentText().strip())
+            if self.auto_baud.isChecked():
+                self.auto_baud.setChecked(False)
+            self.session.set_baudrate(rate)
+            self.baud_pending = True
+            self.apply_baud.setEnabled(False)
+            self.send_button.setEnabled(False)
+        except Exception as exc:
+            self.show_error(str(exc))
+
+    def configure_auto(self, enabled):
+        try:
+            rates = parse_rates(self.auto_rates.text()) if enabled else (115200, 921600, 2000000)
+            self.session.configure_auto(enabled, rates)
+            if enabled:
+                self.send_button.setEnabled(False)
+            self.auto_rates.setEnabled(not enabled)
+            self.auto_label.setText("自动：准备试探（匹配前暂停发送）" if enabled else "自动：正在关闭" if self.connected else "自动：关闭")
+        except Exception as exc:
+            self.auto_baud.blockSignals(True)
+            self.auto_baud.setChecked(False)
+            self.auto_baud.blockSignals(False)
+            self.show_error(str(exc))
+
+    def restart_auto(self):
+        self.configure_auto(True)
+
+    def update_controls(self):
+        self.apply_baud.setEnabled(self.connected and not self.closing and not self.baud_pending)
+        self.baud.setEnabled(not self.closing)
+        self.auto_baud.setEnabled(not self.closing)
+        self.auto_rates.setEnabled(not self.auto_baud.isChecked() and not self.closing)
+        self.auto_restart.setEnabled(self.connected and self.auto_baud.isChecked() and not self.closing)
+        self.send_button.setEnabled(self.connected and not self.baud_pending and not self.session.scanning_event.is_set() and not self.closing)
+        self.refresh.setEnabled(not self.closing)
+
+    def connected_status(self):
+        self.status.setStyleSheet("color: #14745e;")
+        self.status.setText(f"● 已连接 {self.active_port}  ·  {self.session.current_baud} baud  ·  {self.bits.currentText()}{self.parity.currentText()[0]}{self.stopbits.currentText()}")
 
     def selected_port(self):
         text = self.port.currentText().strip()
@@ -265,14 +372,15 @@ class MonitorWindow(QMainWindow):
             self.send_button.setEnabled(False)
             return
         try:
+            if any(w.port_scan and w.scan_identify for w in self.windows):
+                raise ValueError("身份扫描进行中，请等待或停止扫描后再打开串口")
             port = self.selected_port()
             if not port:
                 raise ValueError("请选择或输入串口号，例如 COM3")
-            baud = int(self.baud.currentText().strip())
-            if baud < 1 or baud > 12000000:
-                raise ValueError("波特率请输入 1–12000000 的整数；实际支持范围取决于设备")
+            baud = validate_baud(self.baud.currentText().strip())
             self.session.open(dict(port=port, baudrate=baud, bytesize=int(self.bits.currentText()),
                                    parity=self.parity.currentText()[0], stopbits=float(self.stopbits.currentText())))
+            self.active_port = port
         except Exception as exc:
             self.show_error(str(exc))
             return
@@ -415,11 +523,12 @@ class MonitorWindow(QMainWindow):
             self.connected = True
             self.connecting = False
             self.open_button.setText("关闭串口")
-            self.send_button.setEnabled(not self.closing)
-            self.status.setStyleSheet("color: #14745e;")
-            self.status.setText(f"● 已连接 {detail}  ·  {self.baud.currentText()} baud  ·  {self.bits.currentText()}{self.parity.currentText()[0]}{self.stopbits.currentText()}")
+            self.active_port = detail
+            self.baud_pending = False
+            self.connected_status()
         elif kind == "closed":
             self.connected = self.connecting = False
+            self.baud_pending = False
             self.send_button.setEnabled(False)
             self.open_button.setText("打开串口")
             self.open_button.setEnabled(not self.closing)
@@ -428,6 +537,28 @@ class MonitorWindow(QMainWindow):
             if "#b52937" not in self.status.styleSheet():
                 self.status.setStyleSheet("")
                 self.status.setText("● 串口已关闭")
+        elif kind == "baud_changed":
+            if detail["source"] == "manual":
+                self.baud_pending = False
+            if not self.baud.lineEdit().hasFocus() or detail["source"] == "manual":
+                self.baud.setCurrentText(str(detail["baudrate"]))
+            if self.connected:
+                self.connected_status()
+        elif kind == "baud_error":
+            self.baud_pending = False
+            self.show_error(detail)
+        elif kind == "auto_status":
+            state, rate = detail["state"], detail["baudrate"]
+            if state == "locked":
+                self.auto_label.setText(f"已匹配 {rate}：{detail.get('reason', '')}")
+                if self.connected:
+                    self.connected_status()
+            elif state == "searching":
+                self.auto_label.setText(f"试探 {rate}：仅监听，发送暂停")
+            elif state == "unsupported":
+                self.auto_label.setText(f"跳过不支持的速率 {rate}")
+            else:
+                self.auto_label.setText(f"自动：关闭  ·  当前 {rate}")
         elif kind == "reconnecting":
             self.connected = False
             self.connecting = True
@@ -436,6 +567,7 @@ class MonitorWindow(QMainWindow):
             self.status.setStyleSheet("color: #a26012;")
             self.status.setText("● " + detail)
             self.status.setToolTip(detail)
+            self.auto_label.setText("设备断开，自动重连中")
         elif kind == "error":
             self.show_error(detail)
         elif kind == "log_started":
@@ -455,12 +587,11 @@ class MonitorWindow(QMainWindow):
             if kind == "log_error":
                 self.show_error(detail)
         elif kind in ("ports", "scan_error"):
-            self.port_scan = False
-            self.refresh.setEnabled(not (self.connected or self.connecting or self.closing))
             if kind == "scan_error":
                 self.show_error("刷新串口失败：" + detail)
                 return
             old = self.selected_port()
+            self.identities = {}
             self.port.clear()
             for name, description in detail:
                 self.port.addItem(f"{name} — {description}", name)
@@ -470,6 +601,20 @@ class MonitorWindow(QMainWindow):
                 self.port.setCurrentIndex(match)
             elif old:
                 self.port.setEditText(old)
+        elif kind == "identity":
+            self.identities[detail.device] = detail
+            index = self.port.findData(detail.device)
+            if index >= 0:
+                label = f"{detail.device} — {detail.identity.display_name}" if detail.identity else self.port.itemText(index)
+                if detail.occupied:
+                    label += " [占用]"
+                self.port.setItemText(index, label)
+                self.port.setItemData(index, detail.identity.details if detail.identity else detail.message, Qt.ToolTipRole)
+            self.update_identity_label()
+        elif kind == "scan_done":
+            self.port_scan = False
+            self.scan_identify = False
+            self.refresh.setText("扫描识别")
         elif kind in ("exported", "export_error"):
             self.exporting = False
             self.export_button.setEnabled(not self.closing)
@@ -487,6 +632,7 @@ class MonitorWindow(QMainWindow):
                 except queue.Empty:
                     break
                 self.handle_event(kind, detail)
+        self.update_controls()
         records, dropped = self.session.display.drain(65536, 256)
         self.screen_dropped += dropped
         if dropped:
@@ -512,19 +658,20 @@ class MonitorWindow(QMainWindow):
         if self.closing and not self.session.is_alive():
             # Keep the recorder attached until the final in-flight read returns.
             self.session.stop_recording()
-        if self.closing and not self.session.busy() and not self.exporting:
+        if self.closing and not self.session.busy() and not self.exporting and not self.port_scan:
             self.close()
 
     def closeEvent(self, event):
         if not self.closing:
             self.closing = True
+            self.scan_stop.set()
             self.session.close()
             if not self.session.is_alive():
                 self.session.stop_recording()
             self.connected = self.connecting = False
-            for widget in [*self.config_controls, self.open_button, self.send_button, self.record_button, self.export_button, self.new_window]:
+            for widget in [*self.config_controls, self.baud, self.apply_baud, self.refresh, self.auto_baud, self.auto_rates, self.auto_restart, self.open_button, self.send_button, self.record_button, self.export_button, self.new_window]:
                 widget.setEnabled(False)
-        if self.session.busy() or self.exporting:
+        if self.session.busy() or self.exporting or self.port_scan:
             event.ignore()
             self.status.setText("● 正在关闭连接并写完文件，请稍候…")
             return

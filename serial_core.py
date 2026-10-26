@@ -12,6 +12,7 @@ import time
 
 import serial
 from serial.tools import list_ports
+from auto_baud import BaudTrial, DEFAULT_RATES, validate_baud
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,17 @@ class Record:
     def log_line(self) -> str:
         stamp = datetime.fromtimestamp(self.timestamp).isoformat(sep=" ", timespec="milliseconds")
         return f"[{stamp}] {self.direction} ({len(self.data)} B) {self.data.hex(' ').upper()}\n"
+
+
+@dataclass(frozen=True)
+class LogNote:
+    timestamp: float
+    message: str
+    data: bytes = b""
+
+    def log_line(self):
+        stamp = datetime.fromtimestamp(self.timestamp).isoformat(sep=" ", timespec="milliseconds")
+        return f"# [{stamp}] {self.message}\n"
 
 
 def encode_send(text: str, hex_mode: bool, encoding: str, ending: str) -> bytes:
@@ -116,7 +128,7 @@ class Recorder(threading.Thread):
                 log = stack.enter_context((self.directory / "session.log").open("x", encoding="utf-8"))
                 rx = stack.enter_context((self.directory / "rx.bin").open("xb"))
                 tx = stack.enter_context((self.directory / "tx.bin").open("xb"))
-                log.write("# SerialMonitor v1.4 debug | HEX / local receive timestamps\n")
+                log.write("# SerialMonitor v1.5 debug | HEX / local receive timestamps\n")
                 log.flush()
                 self.ready.set()
                 self.notify("log_started", str(self.directory))
@@ -134,7 +146,8 @@ class Recorder(threading.Thread):
                             record = None
                     if record:
                         log.write(record.log_line())
-                        (rx if record.direction == "RX" else tx).write(record.data)
+                        if isinstance(record, Record):
+                            (rx if record.direction == "RX" else tx).write(record.data)
                     if time.monotonic() - last_flush >= 0.5:
                         for stream in (log, rx, tx):
                             stream.flush()
@@ -152,7 +165,7 @@ class Recorder(threading.Thread):
 
 
 class SerialSession:
-    def __init__(self, factory=None, reconnect_interval=0.5):
+    def __init__(self, factory=None, reconnect_interval=0.5, auto_dwell=1.0, auto_idle=3.0):
         self.factory = factory or serial.serial_for_url
         self.reconnect_interval = reconnect_interval
         self.events = queue.SimpleQueue()
@@ -160,11 +173,19 @@ class SerialSession:
         self.send_queue = queue.Queue(maxsize=16)
         self.stop_event = threading.Event()
         self.connected_event = threading.Event()
+        self.scanning_event = threading.Event()
+        self.baud_changing_event = threading.Event()
         self.thread = None
         self.lock = threading.Lock()
         self.recorder = None
         self.writers = []
         self.rx = self.tx = 0
+        self.current_baud = 115200
+        self._requested_baud = None
+        self._auto_settings = (False, DEFAULT_RATES)
+        self._settings_revision = 0
+        self.auto_dwell = auto_dwell
+        self.auto_idle = auto_idle
 
     def notify(self, kind, detail=""):
         self.events.put((kind, detail))
@@ -173,6 +194,10 @@ class SerialSession:
         if self.is_alive():
             raise RuntimeError("上一个连接仍在关闭，请稍候")
         self.stop_event.clear()
+        self.scanning_event.clear()
+        self.baud_changing_event.clear()
+        with self.lock:
+            self._requested_baud = None
         while not self.send_queue.empty():
             self.send_queue.get_nowait()
         self.thread = threading.Thread(target=self._run, args=(dict(config),), name="serial-io", daemon=True)
@@ -185,6 +210,10 @@ class SerialSession:
         with self.lock:
             if self.stop_event.is_set() or not self.connected_event.is_set():
                 raise RuntimeError("串口未连接，正在等待设备恢复或尚未打开")
+            if self.scanning_event.is_set():
+                raise RuntimeError("波特率正在试探，匹配前不能发送数据；可关闭自动试探后手动设置")
+            if self.baud_changing_event.is_set():
+                raise RuntimeError("正在切换波特率，请等待应用完成")
             try:
                 self.send_queue.put_nowait(data)
             except queue.Full:
@@ -193,9 +222,41 @@ class SerialSession:
     def close(self):
         self.stop_event.set()
 
+    def set_baudrate(self, value):
+        rate = validate_baud(value)
+        with self.lock:
+            if self.stop_event.is_set() or not self.connected_event.is_set():
+                raise RuntimeError("请在串口已连接时应用波特率")
+            self._requested_baud = rate
+            self.baud_changing_event.set()
+            self._auto_settings = (False, self._auto_settings[1])
+            self._settings_revision += 1
+
+    def configure_auto(self, enabled, rates=DEFAULT_RATES):
+        rates = tuple(dict.fromkeys(validate_baud(r) for r in rates))
+        if not 1 <= len(rates) <= 8:
+            raise ValueError("候选波特率需要 1–8 个")
+        with self.lock:
+            self._auto_settings = (bool(enabled), rates)
+            self._settings_revision += 1
+            if enabled and self.connected_event.is_set():
+                self.scanning_event.set()
+
+    def _drop_pending_sends(self):
+        with self.lock:
+            while not self.send_queue.empty():
+                self.send_queue.get_nowait()
+
+    def _note(self, message):
+        with self.lock:
+            if self.recorder:
+                self.recorder.submit(LogNote(time.time(), message))
+
     def _disconnected(self):
         with self.lock:
             self.connected_event.clear()
+            self.scanning_event.clear()
+            self.baud_changing_event.clear()
             # Never replay stale commands after a board reset.
             while not self.send_queue.empty():
                 self.send_queue.get_nowait()
@@ -223,6 +284,7 @@ class SerialSession:
             writer = Recorder(Path(directory), self.notify)
             self.recorder = writer
             self.writers.append(writer)
+            writer.submit(LogNote(time.time(), f"CURRENT BAUD {self.current_baud}; automatic trials are host-side only"))
             writer.start()
         return writer
 
@@ -247,6 +309,7 @@ class SerialSession:
                 port = None
                 retry = False
                 try:
+                    self.current_baud = int(config.get("baudrate", 115200))
                     port = self.factory(name, do_not_open=True, timeout=0.03, write_timeout=0.5, **config)
                     port.dtr = False
                     port.rts = False
@@ -257,7 +320,8 @@ class SerialSession:
                     opened_once = True
                     waiting = False
                     self.notify("opened", name)
-                    self._transfer(port)
+                    self._note(f"OPEN {name} BAUD {self.current_baud}")
+                    self._transfer(port, config)
                 except serial.SerialTimeoutException as exc:
                     # A timed-out command may be partially sent. Do not replay it.
                     if not self.stop_event.is_set():
@@ -288,12 +352,83 @@ class SerialSession:
             self.stop_event.set()
             self.notify("closed")
 
-    def _transfer(self, port):
+    def _change_baud(self, port, rate, config, source, remember=True):
+        previous = self.current_baud
+        try:
+            port.baudrate = rate
+        except (ValueError, OSError, serial.SerialException) as exc:
+            try:
+                port.baudrate = previous
+            except Exception as rollback:
+                raise serial.SerialException(f"切换失败且无法恢复串口参数：{rollback}") from exc
+            if source == "manual":
+                self.baud_changing_event.clear()
+            self.notify("auto_status" if source == "probe" else "baud_error",
+                        {"state": "unsupported", "baudrate": rate, "reason": str(exc)} if source == "probe" else f"无法设置 {rate}，已保留 {previous}：{exc}")
+            return False
+        with self.lock:
+            self.current_baud = rate
+            if source == "manual":
+                self.baud_changing_event.clear()
+        if remember:
+            config["baudrate"] = rate
+        self._note(f"BAUD {previous} -> {rate} ({source}); in-flight bytes may span settings")
+        self.notify("baud_changed", {"baudrate": rate, "source": source})
+        return True
+
+    def _transfer(self, port, config):
         payload = b""
         offset = 0
+        trial = None
+        revision = -1
         while not self.stop_event.is_set():
+            now = time.monotonic()
+            with self.lock:
+                requested, self._requested_baud = self._requested_baud, None
+                settings_revision = self._settings_revision
+                enabled, rates = self._auto_settings
+            if requested is not None:
+                trial = None
+                self.scanning_event.clear()
+                payload, offset = b"", 0
+                self._drop_pending_sends()
+                self._change_baud(port, requested, config, "manual")
+                self.notify("auto_status", {"state": "off", "baudrate": self.current_baud})
+            elif revision != settings_revision:
+                if enabled:
+                    confirmed = trial.confirmed if trial else self.current_baud
+                    trial = BaudTrial(self.current_baud, rates, now, self.auto_dwell, self.auto_idle)
+                    trial.confirmed = confirmed
+                    self.scanning_event.set()
+                    payload, offset = b"", 0
+                    self._drop_pending_sends()
+                    self._note("AUTO SEARCH (passive); sends paused; candidate bytes are retained unvalidated")
+                    self.notify("auto_status", {"state": "searching", "baudrate": self.current_baud})
+                elif trial is not None:
+                    restore = trial.confirmed
+                    trial = None
+                    self.scanning_event.clear()
+                    if self.current_baud != restore:
+                        self._change_baud(port, restore, config, "restore")
+                    self.notify("auto_status", {"state": "off", "baudrate": self.current_baud})
+            revision = settings_revision
+            if trial:
+                action = trial.tick(now)
+                if action:
+                    state, rate = action
+                    self.scanning_event.set()
+                    payload, offset = b"", 0
+                    self._drop_pending_sends()
+                    if state == "rate":
+                        if not self._change_baud(port, rate, config, "probe", remember=False):
+                            trial.since = now - trial.dwell
+                        else:
+                            self.notify("auto_status", {"state": "searching", "baudrate": rate})
+                    else:
+                        self._note("AUTO SEARCH: recognizable data absent; sends paused")
+                        self.notify("auto_status", {"state": "searching", "baudrate": rate})
             # Interleave bounded writes and reads, including for large payloads.
-            if offset >= len(payload):
+            if not self.scanning_event.is_set() and offset >= len(payload):
                 try:
                     payload = self.send_queue.get_nowait()
                     offset = 0
@@ -310,6 +445,14 @@ class SerialSession:
             data = port.read(min(max(port.in_waiting, 1), 4096))
             if data:
                 self._record("RX", data)
+                if trial and trial.current == self.current_baud:
+                    was_locked = trial.locked
+                    reason = trial.observe(data, time.monotonic())
+                    if reason and not was_locked:
+                        config["baudrate"] = self.current_baud
+                        self.scanning_event.clear()
+                        self._note(f"AUTO MATCH {self.current_baud}: {reason}")
+                        self.notify("auto_status", {"state": "locked", "baudrate": self.current_baud, "reason": reason})
 
 
 def discover_ports():
