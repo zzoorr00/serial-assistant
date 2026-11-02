@@ -67,7 +67,8 @@ def parse_identity(data):
             if role == "ble_receiver":
                 if chip != "C5" or channels or active != 0 or not re.fullmatch(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}", address):
                     continue
-            elif channels != [8, 16] or active not in channels:
+            elif (not channels or any(n <= 0 for n in channels)
+                  or len(set(channels)) != len(channels) or active not in channels):
                 continue
             firmware, transport = value["firmware"], value["transport"]
             if not all(isinstance(s, str) and 0 < len(s) <= 64 and s.isprintable() for s in (firmware, transport)):

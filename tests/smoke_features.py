@@ -85,6 +85,19 @@ with patch("main.scan_ports", scanner), tempfile.TemporaryDirectory() as temp:
     assert "Busy" in window.port.itemText(window.port.findData("COM52"))
     results["identity_rows_keep_com_and_show_name_id_occupied"] = True
 
+    for channels, active in (([4], 4), ([8, 16], 8), ([8, 16], 16), ([24, 32], 24)):
+        value.update(supported_channels=channels, active_channels=active)
+        identity = parse_identity(IDENTITY_PREFIX + json.dumps(value).encode("ascii") + b"\n")
+        assert identity is not None
+        QTest.mouseClick(window.refresh, Qt.LeftButton)
+        wait_for(lambda: not window.port_scan)
+        capability = f"({'/'.join(map(str, channels))} channels)"
+        assert capability in window.port.currentText(), window.port.currentText()
+        assert capability in window.identity_label.text(), window.identity_label.text()
+        assert f"\nActive channels: {active}\n" in window.identity_label.toolTip()
+        assert f"\nActive channels: {active}\n" in window.port.itemData(window.port.currentIndex(), Qt.ToolTipRole)
+    results["dynamic_channel_capabilities_and_active_state_in_scan_ui"] = True
+
     window.session.factory = lambda *a, **k: Port(k["baudrate"])
     with patch.object(QFileDialog, "getExistingDirectory", return_value=temp) as folder_dialog:
         window.toggle_recording()

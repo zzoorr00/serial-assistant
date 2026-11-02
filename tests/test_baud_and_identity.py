@@ -132,6 +132,38 @@ class LiveBaudTests(unittest.TestCase):
 
 
 class IdentityTests(unittest.TestCase):
+    def test_acquisition_channel_capabilities_and_active_state_are_dynamic(self):
+        for channels in ([4], [8], [16], [8, 16], [16, 8], [4, 8, 16, 32], [24]):
+            for active in channels:
+                with self.subTest(channels=channels, active=active):
+                    identity = parse_identity(response(supported_channels=channels, active_channels=active))
+                    self.assertIsNotNone(identity)
+                    self.assertEqual(identity.supported_channels, tuple(channels))
+                    self.assertEqual(identity.active_channels, active)
+                    self.assertEqual(identity.display_name,
+                                     f"FreeBCI C5 Acquisition ({'/'.join(map(str, channels))} channels)")
+                    self.assertIn(f"\nActive channels: {active}\n", identity.details)
+
+    def test_rejects_invalid_channel_fields_and_recovers_at_next_response(self):
+        invalid = [([], 0), ([0], 0), ([-4], -4), ([4, 0], 4), ([4, -8], 4),
+                   ([4, 4], 4), ([4], 8), ([4], 0), ([4], -4),
+                   ([True], 1), ([4, True], 4), ([4.0], 4), (["4"], 4), ([None], 4),
+                   ([[4]], 4), ([{}], 4), (4, 4), ("4", 4), (None, 4),
+                   ([4], True), ([4], 4.0), ([4], "4"), ([4], None)]
+        valid = response(supported_channels=[4], active_channels=4)
+        for channels, active in invalid:
+            with self.subTest(channels=channels, active=active):
+                data = response(supported_channels=channels, active_channels=active)
+                self.assertIsNone(parse_identity(data))
+                self.assertEqual(parse_identity(data + valid).supported_channels, (4,))
+
+    def test_receiver_channel_fields_remain_empty_and_zero(self):
+        for channels, active in (([4], 4), ([8, 16], 8), ([], 4), ([], True)):
+            with self.subTest(channels=channels, active=active):
+                self.assertIsNone(parse_identity(response(
+                    role="ble_receiver", address="AA:BB:CC:DD:12:34",
+                    supported_channels=channels, active_channels=active)))
+
     def test_protocol_and_role_names(self):
         identity = parse_identity(b"boot\r\n" + response())
         self.assertIn("Acquisition", identity.display_name)
@@ -149,6 +181,7 @@ class IdentityTests(unittest.TestCase):
 
     def test_probe_readonly_query_split_response_and_baud_trials(self):
         writes = []
+        packet = response(supported_channels=[4], active_channels=4)
         class Port:
             baudrate = 0
             def __init__(self): self.parts = []; self.closed = False
@@ -161,12 +194,13 @@ class IdentityTests(unittest.TestCase):
                 return self.parts.pop(0) if self.parts else b""
             def write(self, data):
                 writes.append((self.baudrate, data))
-                if self.baudrate == 921600: self.parts.extend([response()[:30], response()[30:]])
+                if self.baudrate == 921600: self.parts.extend([packet[:30], packet[30:]])
             def close(self): self.closed = True
         port = Port()
         result = probe_identity("COM_TEST", lambda: False, factory=lambda **k: port, dwell=0.22)
         self.assertEqual(result.baudrate, 921600)
         self.assertIsNotNone(result.identity)
+        self.assertEqual(result.identity.supported_channels, (4,))
         self.assertTrue(port.closed)
         self.assertTrue(all(data == IDENTITY_QUERY for rate, data in writes))
 

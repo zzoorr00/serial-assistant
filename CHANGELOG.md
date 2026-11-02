@@ -1,5 +1,11 @@
 # 版本记录
 
+## 2026-11-02 18:47 — 1.7 debug 动态通道校验与独立程序
+
+- **修改内容**：移除固定 `[8,16]` 通道限制，校验非空、无重复的正整数通道列表及列表内当前通道数；名称按 `supported_channels` 动态显示，悬停详情单独显示 `active_channels`。更新版本标记、下载说明及源码文件清单，构建 Windows x64 单文件 exe。
+- **本版本能力**：38 项自动测试与 Qt 功能模拟通过；原有 Qt 界面回归及 8 MiB 模拟记录逐字节核对通过。exe 冻结模块的 4 组动态通道检查与独立路径启动、响应、正常关闭检查通过。
+- **已知问题**：待实机验证，未同步 stable。
+
 ## 1.6 debug — 2026-10-26
 
 - I removed passive automatic baud detection and switching while keeping live manual Apply and explicit FreeBCI identity scanning.

@@ -1,6 +1,6 @@
 # Testing scope
 
-Version **1.6 debug**, tested with Python 3.12.4 on Windows 10 x64.
+Version **1.7 debug**, tested with Python 3.12.4 on Windows 10 x64.
 
 ## Unit and stream checks
 
@@ -8,13 +8,18 @@ Version **1.6 debug**, tested with Python 3.12.4 on Windows 10 x64.
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-35 tests cover encoding, HEX validation, binary loopback, recording/export, reconnect and
+38 tests cover encoding, HEX validation, binary loopback, recording/export, reconnect and
 cancellation, no replay of stale commands, timeouts and bounded queues; stream formatting,
 split UTF-8, CR/LF/CRLF, direction headers and all 71 HEX widths from 20 to 90; live baud changes
 on the same handle, driver rejection rollback and reconnect at the last applied rate; identity
 protocol validation, read-only probing and scan exclusions; English runtime messages, localized
 OS-error fallback and baud validation. A fake serial stream repeatedly announces another baud
 and sends invalid bytes; the host rate stays fixed until explicitly changed.
+
+Channel validation covers dynamic acquisition capabilities such as `[4]`, `[8,16]` and `[24]`,
+each supported active count, rejection of empty/duplicate/nonpositive/noninteger capabilities
+and active counts outside the list, recovery at the next valid packet, unchanged receiver rules,
+and fragmented 4-channel replies during baud trials.
 
 ## Windows GUI simulations
 
@@ -33,6 +38,9 @@ Feature simulations check identity names/IDs/busy markers, live Apply without re
 automatic rate changes, manual sends, English labels/tooltips/device descriptions/error fallbacks,
 non-native English recording dialogs, connected-port scan exclusion, scan cancellation and orderly
 shutdown. Demo COM names and IDs are synthetic. Results and screenshots are in `test-output/`.
+
+Dynamic identity simulations scan `[4]`, `[8,16]` with either active count, and `[24,32]`;
+both port names and the device label show capabilities, with the active count in hover details.
 
 ## Remaining hardware checks
 

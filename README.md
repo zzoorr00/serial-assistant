@@ -2,7 +2,10 @@
 
 A simple Windows serial monitor built with Python, PyQt5 and pySerial.
 
-**Version: 1.6 debug · Python 3.12 · English interface**
+**Version: 1.7 debug · Python 3.12 · English interface**
+
+Download the standalone Windows x64 EXE from the [1.7 debug release](https://github.com/zzoorr00/serial-assistant/releases/tag/v1.7-debug).
+Python is not required for the EXE. Hardware acceptance is pending.
 
 ![Serial Assistant: device identity and aligned HEX data](docs/images/serial-assistant.png)
 
@@ -76,6 +79,12 @@ open errors and write timeouts require a manual reopen; timed-out writes may hav
 **Scan devices** queries compatible acquisition boards and BLE receivers, showing their names,
 COM numbers and IDs. Hover for chip, firmware and address details. Click again to cancel.
 The active connection in any window, occupied ports and unknown USB interfaces are skipped.
+
+Acquisition names show the reported `supported_channels`, for example `4 channels` or
+`8/16 channels`; hover details show the current `active_channels` separately. Supported channels
+must be a nonempty list of distinct positive integers, and the active count must be an integer
+in that list. Channel counts are not restricted to a fixed set. BLE receivers retain an empty
+supported list and an active count of zero.
 
 The scanner uses the existing `freebci.identity` v1 protocol: a read-only `0x1D` query on known
 Espressif USB `303A:1001` and CH343 `1A86:55D3` interfaces. An explicit scan tries 115200,

@@ -1,4 +1,4 @@
-"""SerialMonitor 1.6 debug: GUI work is bounded; serial and disk IO stay off GUI."""
+"""SerialMonitor 1.7 debug: GUI work is bounded; serial and disk IO stay off GUI."""
 from __future__ import annotations
 
 from collections import deque
@@ -25,7 +25,7 @@ from ui_text import english_text, error_text
 from device_scan import scan_ports
 
 
-VERSION = "1.6 debug"
+VERSION = "1.7 debug"
 HISTORY_BYTES = 1024 * 1024
 
 # Qt 5's wheel can encode its built-in plugin path incorrectly in Chinese
