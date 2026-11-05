@@ -1,6 +1,10 @@
 # Testing scope
 
-Version **1.7 debug**, tested with Python 3.12.4 on Windows 10 x64.
+Version **1.8**, tested with Python 3.12.4 on Windows 10 x64.
+
+The application name is `FreeBCI Serial Assistant`. Title and heading checks verify
+the English name and current version. Runtime and GUI language checks include the application
+name with no exceptions. The supplied black USB and EEG icon must load from `assets/app.ico`.
 
 ## Unit and stream checks
 
@@ -52,4 +56,4 @@ Confirm recording continues, Close stops reconnect attempts, and raw files match
 
 Software simulations do not establish actual driver compatibility or device-side data integrity.
 Real USB rate changes, identity responses, power cycles, sustained traffic and another PC are
-pending hardware validation. This debug build has not been synced to stable.
+separate hardware checks. The functional development version passed acceptance before release.

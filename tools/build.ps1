@@ -8,7 +8,7 @@ Push-Location -LiteralPath $projectDir
 try {
     & $pythonExe tools\freeze.py
     if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed.' }
-    $exePath = Join-Path $projectDir 'dist\串口助手.exe'
+    $exePath = Join-Path $projectDir 'dist\FreeBCI Serial Assistant.exe'
     $hash = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash
     Write-Output "Built: $exePath"
     Write-Output "SHA256: $hash"

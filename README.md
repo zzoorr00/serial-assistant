@@ -1,11 +1,11 @@
-# Serial Assistant
+# FreeBCI Serial Assistant
 
 A simple Windows serial monitor built with Python, PyQt5 and pySerial.
 
-**Version: 1.7 debug · Python 3.12 · English interface**
+**Version: 1.8 · Python 3.12 · English interface**
 
-Download the standalone Windows x64 EXE from the [1.7 debug release](https://github.com/zzoorr00/serial-assistant/releases/tag/v1.7-debug).
-Python is not required for the EXE. Hardware acceptance is pending.
+Download the standalone Windows x64 EXE from the [1.8 release](https://github.com/zzoorr00/serial-assistant/releases/tag/v1.8).
+Python is not required for the EXE. The functional development version passed acceptance.
 
 ![Serial Assistant: device identity and aligned HEX data](docs/images/serial-assistant.png)
 
@@ -34,7 +34,7 @@ py -3.12 -m venv .venv
 
 In VS Code, open this folder, select `.venv\Scripts\python.exe`, then run `main.py`.
 Runtime files are `main.py`, `serial_core.py`, `display_format.py`, `device_identity.py`,
-`device_scan.py` and `ui_text.py`. No other project is required.
+`device_scan.py`, `ui_text.py` and `assets/app.ico`. No other project is required.
 
 ## Use
 
@@ -127,11 +127,11 @@ device, driver or operating system.
 powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ```
 
-Build output: `dist\串口助手.exe`, a standalone Windows x64 executable; Python is not required
+Build output: `dist\FreeBCI Serial Assistant.exe`, a standalone Windows x64 executable; Python is not required
 to run it. Build and simulation output stays in the development project. Test scripts temporarily
 open GUI windows and use software loopback or fake devices. See [testing scope](docs/TESTING.md).
 
-This debug build passed software tests on Windows 10 x64. Real board traffic, identity scans,
+This release passed software tests on Windows 10 x64. Real board traffic, identity scans,
 USB-driver live rate changes, board restarts, long sessions and another computer still need
-hardware validation. **Hardware acceptance is pending; this build has not been synced to stable.**
+hardware validation. **The functional development version passed acceptance before release.**
 Manual DTR/RTS controls and hardware flow control are not provided.

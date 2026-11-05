@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PyQt5.QtCore import Qt
 from PyQt5.QtTest import QTest
 from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QCheckBox, QComboBox, QPlainTextEdit, QFileDialog
-from main import MonitorWindow
+from main import APP_ICON, APP_NAME, VERSION, MonitorWindow
 from device_identity import IDENTITY_PREFIX, parse_identity
 from device_scan import ScanResult
 from ui_text import english_text
@@ -75,6 +75,14 @@ class Port:
 with patch("main.scan_ports", scanner), tempfile.TemporaryDirectory() as temp:
     window = MonitorWindow()
     window.show()
+    assert APP_NAME == "FreeBCI Serial Assistant"
+    assert APP_ICON.is_file() and not window.windowIcon().isNull()
+    results["usb_eeg_window_icon_loaded"] = True
+    assert window.windowTitle() == APP_NAME
+    assert "debug" not in window.windowTitle().lower()
+    assert any(label.text() == APP_NAME for label in window.findChildren(QLabel))
+    assert any(label.text() == f"SERIAL MONITOR  /  {VERSION.upper()}" for label in window.findChildren(QLabel))
+    results["application_title_and_heading"] = True
     wait_for(lambda: not window.port_scan)
     assert scan_calls == [(False, set())], scan_calls
     QTest.mouseClick(window.refresh, Qt.LeftButton)

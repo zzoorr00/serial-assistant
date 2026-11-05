@@ -1,4 +1,4 @@
-"""SerialMonitor 1.7 debug: GUI work is bounded; serial and disk IO stay off GUI."""
+"""FreeBCI serial debugging assistant: bounded GUI with background serial/disk IO."""
 from __future__ import annotations
 
 from collections import deque
@@ -25,7 +25,8 @@ from ui_text import english_text, error_text
 from device_scan import scan_ports
 
 
-VERSION = "1.7 debug"
+APP_NAME = "FreeBCI Serial Assistant"
+VERSION = "1.8"
 APP_ICON = Path(__file__).resolve().parent / "assets" / "app.ico"
 HISTORY_BYTES = 1024 * 1024
 
@@ -79,7 +80,7 @@ class MonitorWindow(QMainWindow):
         self.refresh_ports(identify=False)
 
     def _build_ui(self):
-        self.setWindowTitle(f"Serial Assistant · SerialMonitor {VERSION}")
+        self.setWindowTitle(APP_NAME)
         self.setWindowIcon(QIcon(str(APP_ICON)))
         self.resize(1180, 840)
         self.setMinimumSize(1000, 700)
@@ -89,10 +90,10 @@ class MonitorWindow(QMainWindow):
         layout.setContentsMargins(22, 18, 22, 16)
         layout.setSpacing(12)
         heading = QHBoxLayout()
-        title = QLabel("Serial Assistant")
+        title = QLabel(APP_NAME)
         title.setObjectName("title")
         heading.addWidget(title)
-        subtitle = QLabel("SERIAL MONITOR  /  1.6 DEBUG")
+        subtitle = QLabel(f"SERIAL MONITOR  /  {VERSION.upper()}")
         subtitle.setObjectName("muted")
         heading.addWidget(subtitle)
         heading.addStretch()
@@ -637,7 +638,7 @@ def main():
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     QLocale.setDefault(QLocale(QLocale.English, QLocale.UnitedStates))
     app = QApplication(sys.argv)
-    app.setApplicationName("Serial Assistant")
+    app.setApplicationName(APP_NAME)
     app.setWindowIcon(QIcon(str(APP_ICON)))
     app.setStyle("Fusion")
     window = MonitorWindow()

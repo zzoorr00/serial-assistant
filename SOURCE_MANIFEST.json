@@ -1,10 +1,10 @@
 {
-  "version": "1.7 debug",
+  "version": "1.8",
   "files": {
     ".gitignore": "5369b43bcb4525621b2b25bb3703890ceae4d7b595d9df30c9917e781791365e",
     ".gitattributes": "23302dd90b8bb74b44d365fafef8df20f809b61cb347023951ecf60a88a29651",
-    "README.md": "3f4e96815337932f84b20fe423af158eafb9fba7502c3feb8e688fca0db2cd60",
-    "main.py": "7af310306181f4819cb8bd31a9a663601136ed7b99ab6e7306c5c678111e549d",
+    "README.md": "c6cfca09fef055860e6289672e6d7fb2b203632cc23578d99de04ebad6851e20",
+    "main.py": "7878f96b07c15a0b103bf91bbc96ce67bd76ce33d05368b526abc616cda54c7f",
     "serial_core.py": "3a818dd828af54f8468643e28edd75b9eb2d8e65fd01e7e4ec8257cb0d4c3dd7",
     "display_format.py": "47cb3df6993842fe02faf2df428ad422c4f7e6a424d6bde64ac94edd1cf51116",
     "device_identity.py": "81a3672aa8a0c95fe2fcc7c3001879a4f7c340d9422c29adafe37112d3b4f015",
@@ -17,11 +17,13 @@
     "tests/test_baud_and_identity.py": "22e8dd8b5ffff1b42262d4d6fd086213d95e9a10d008d0614ceee032740cf26f",
     "tests/test_language.py": "885b4ec8d50ec5d481f8fb775680a5d9c5a0ff86fc4a1c5adef8fe7dedced570",
     "tests/smoke_gui.py": "4e663ef91884e08f096c4dab7f690b6a8dbe508efd11968b3d2c676d76281157",
-    "tests/smoke_features.py": "301968129ed85c4424c6e91db860c2cb2ebb65faacba266b886d393c007d84ba",
-    "tools/build.ps1": "8c27562c4d777842fb8fec2f1c955f1aac58bbc70fc9bf47c51d7e38df080e0d",
-    "tools/freeze.py": "0eb229b652cecf0acea278b743fa50e6e18d76e0e10e7778acc0266f7d2113bf",
-    "docs/TESTING.md": "efec05d70e5d8169745269bdfd94c9ebf745eb9f0c11505a7cf4e2e2124f0f74",
-    "docs/images/serial-assistant.png": "74d05baa63a22d106954790ba999b10715316fa2d6ecd497ed43967e6202dfb0",
-    "CHANGELOG.md": "69f3039803e64091c213e2b53d5343c6fbb1817881ec5240d885bd679501c128"
+    "tests/smoke_features.py": "e8d873adb273fddee9bfee2c4f0407dd4a8270a364a19f1741b6b4dafdfad5ba",
+    "tools/build.ps1": "8ebacd959c0309813b3a5de533bd925dabf27efaec7017e006c9ece13436296a",
+    "tools/freeze.py": "b2c188d3671c854112587fb4e091897172e905b37a5ccec1fd2c28e7b0adcbc8",
+    "docs/TESTING.md": "14f1d3c777285f9cd56d269f0cac0adbe012f5fd2204042baac40f8fc265aacf",
+    "docs/images/serial-assistant.png": "e56851d8501867dc395b828f0c01f2f4e1a7105d1e4fcdaa4976067e485131cd",
+    "CHANGELOG.md": "b618cb2f7647c6b6c4fed3cea27b88fdb8410b7ff5fd7bb6a0020b97e95779c9",
+    "assets/app.ico": "a8314702c29e8be14000eed38c0da83627298413d4a3c78b48aa88313ad3e026",
+    "tools/version_info.txt": "1fc6049d0304020b160674acfb0fcc626026143deb2e1cd9f8c4a03fc0d10d5f"
   }
 }

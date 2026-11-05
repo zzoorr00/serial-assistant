@@ -18,7 +18,8 @@ if real_prefix.is_dir() and not Path(info.location["PluginsPath"]).is_dir():
 
 project = Path(__file__).resolve().parents[1]
 PyInstaller.__main__.run([
-    "--noconfirm", "--onefile", "--windowed", "--name", "串口助手",
+    "--noconfirm", "--onefile", "--windowed", "--name", "FreeBCI Serial Assistant",
+    "--version-file", str(project / "tools" / "version_info.txt"),
     "--icon", str(project / "assets" / "app.ico"),
     "--add-data", f"{project / 'assets' / 'app.ico'};assets",
     "--hidden-import", "serial.urlhandler.protocol_loop", str(project / "main.py"),
