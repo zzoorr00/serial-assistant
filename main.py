@@ -26,7 +26,7 @@ from device_scan import scan_ports
 
 
 APP_NAME = "FreeBCI Serial Assistant"
-VERSION = "1.8"
+VERSION = "1.8.1"
 APP_ICON = Path(__file__).resolve().parent / "assets" / "app.ico"
 HISTORY_BYTES = 1024 * 1024
 

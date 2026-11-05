@@ -1,10 +1,10 @@
 {
-  "version": "1.8",
+  "version": "1.8.1",
   "files": {
     ".gitignore": "5369b43bcb4525621b2b25bb3703890ceae4d7b595d9df30c9917e781791365e",
     ".gitattributes": "23302dd90b8bb74b44d365fafef8df20f809b61cb347023951ecf60a88a29651",
-    "README.md": "c6cfca09fef055860e6289672e6d7fb2b203632cc23578d99de04ebad6851e20",
-    "main.py": "7878f96b07c15a0b103bf91bbc96ce67bd76ce33d05368b526abc616cda54c7f",
+    "README.md": "23e73923db52ab0e06eb08c3af389763f96d4790201ccb234128471c1f1ad3c2",
+    "main.py": "9206af2257912421ceed78c6411aee11cc63064bc026c577acc3512b773d1bdf",
     "serial_core.py": "3a818dd828af54f8468643e28edd75b9eb2d8e65fd01e7e4ec8257cb0d4c3dd7",
     "display_format.py": "47cb3df6993842fe02faf2df428ad422c4f7e6a424d6bde64ac94edd1cf51116",
     "device_identity.py": "81a3672aa8a0c95fe2fcc7c3001879a4f7c340d9422c29adafe37112d3b4f015",
@@ -20,10 +20,10 @@
     "tests/smoke_features.py": "e8d873adb273fddee9bfee2c4f0407dd4a8270a364a19f1741b6b4dafdfad5ba",
     "tools/build.ps1": "8ebacd959c0309813b3a5de533bd925dabf27efaec7017e006c9ece13436296a",
     "tools/freeze.py": "b2c188d3671c854112587fb4e091897172e905b37a5ccec1fd2c28e7b0adcbc8",
-    "docs/TESTING.md": "14f1d3c777285f9cd56d269f0cac0adbe012f5fd2204042baac40f8fc265aacf",
+    "docs/TESTING.md": "66f5577c7b64a447e67fe842f608a77a48b3b660838a2dee2f956937bc0a7809",
     "docs/images/serial-assistant.png": "e56851d8501867dc395b828f0c01f2f4e1a7105d1e4fcdaa4976067e485131cd",
-    "CHANGELOG.md": "b618cb2f7647c6b6c4fed3cea27b88fdb8410b7ff5fd7bb6a0020b97e95779c9",
-    "assets/app.ico": "a8314702c29e8be14000eed38c0da83627298413d4a3c78b48aa88313ad3e026",
-    "tools/version_info.txt": "1fc6049d0304020b160674acfb0fcc626026143deb2e1cd9f8c4a03fc0d10d5f"
+    "CHANGELOG.md": "def7bc49da7988948b3528f012a6e601f00d68a407446e174bc0f668b37db056",
+    "assets/app.ico": "ffbc2e39b72b1f9d066783fb57df5bd1e192f3b8cf9cc1f33a7cefb42a5c23ca",
+    "tools/version_info.txt": "feef76781d8f3d8c6808881d9e958a44c4d9140b38d8e1040649ead0d88f0840"
   }
 }

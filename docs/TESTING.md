@@ -1,6 +1,6 @@
 # Testing scope
 
-Version **1.8**, tested with Python 3.12.4 on Windows 10 x64.
+Version **1.8.1**, tested with Python 3.12.4 on Windows 10 x64.
 
 The application name is `FreeBCI Serial Assistant`. Title and heading checks verify
 the English name and current version. Runtime and GUI language checks include the application

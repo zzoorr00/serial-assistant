@@ -2,9 +2,9 @@
 
 A simple Windows serial monitor built with Python, PyQt5 and pySerial.
 
-**Version: 1.8 · Python 3.12 · English interface**
+**Version: 1.8.1 · Python 3.12 · English interface**
 
-Download the standalone Windows x64 EXE from the [1.8 release](https://github.com/zzoorr00/serial-assistant/releases/tag/v1.8).
+Download the standalone Windows x64 EXE from the [1.8.1 release](https://github.com/zzoorr00/serial-assistant/releases/tag/v1.8.1).
 Python is not required for the EXE. The functional development version passed acceptance.
 
 ![Serial Assistant: device identity and aligned HEX data](docs/images/serial-assistant.png)
