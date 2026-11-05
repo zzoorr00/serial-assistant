@@ -11,7 +11,7 @@ import threading
 
 import PyQt5
 from PyQt5.QtCore import QCoreApplication, QLocale, Qt, QTimer
-from PyQt5.QtGui import QColor, QFont, QTextCharFormat, QTextCursor
+from PyQt5.QtGui import QColor, QFont, QIcon, QTextCharFormat, QTextCursor
 from PyQt5.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QMainWindow, QPlainTextEdit, QPushButton,
@@ -26,6 +26,7 @@ from device_scan import scan_ports
 
 
 VERSION = "1.7 debug"
+APP_ICON = Path(__file__).resolve().parent / "assets" / "app.ico"
 HISTORY_BYTES = 1024 * 1024
 
 # Qt 5's wheel can encode its built-in plugin path incorrectly in Chinese
@@ -79,6 +80,7 @@ class MonitorWindow(QMainWindow):
 
     def _build_ui(self):
         self.setWindowTitle(f"Serial Assistant · SerialMonitor {VERSION}")
+        self.setWindowIcon(QIcon(str(APP_ICON)))
         self.resize(1180, 840)
         self.setMinimumSize(1000, 700)
         root = QWidget()
@@ -636,6 +638,7 @@ def main():
     QLocale.setDefault(QLocale(QLocale.English, QLocale.UnitedStates))
     app = QApplication(sys.argv)
     app.setApplicationName("Serial Assistant")
+    app.setWindowIcon(QIcon(str(APP_ICON)))
     app.setStyle("Fusion")
     window = MonitorWindow()
     window.show()
